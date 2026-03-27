@@ -7,6 +7,18 @@ const nextConfig: NextConfig = {
   poweredByHeader: false,
   generateEtags: true,
   pageExtensions: ["ts", "tsx", "js", "jsx"],
+
+  // --- ADD THIS REDIRECTS BLOCK ---
+  async redirects() {
+    return [
+      {
+        source: "/",
+        destination: "/login",
+        permanent: true,
+      },
+    ];
+  },
+
   /* Configure rewrites for localhost preview */
   async rewrites() {
     return {

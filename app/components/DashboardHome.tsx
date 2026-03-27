@@ -88,7 +88,8 @@ const dashboards: DashboardCard[] = [
   },
 ];
 
-export default function DashboardHome() {
+// Add the userRole prop to the component!
+export default function DashboardHome({ userRole }: { userRole?: string }) {
   return (
     <div className="min-h-screen bg-gray-50">
       {/* Header */}
@@ -108,17 +109,31 @@ export default function DashboardHome() {
           <div className="lg:col-span-3">
             <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
               {dashboards.map((dashboard) => {
-                // Special cases for direct navigation
-                const href = dashboard.id === "academy" ? "/academy" : dashboard.id === "sms" ? "/sms" : `/dashboards/${dashboard.id}`;
                 
+                // Logic to check if this specific button should be disabled
+                const isDisabled = userRole === "BRANCH_MANAGER" && dashboard.id !== "hrms";
+                
+                // Special cases for direct navigation
+                const targetHref = dashboard.id === "academy" ? "/academy" : dashboard.id === "sms" ? "/sms" : `/dashboards/${dashboard.id}`;
+                
+                // If disabled, href becomes # so it doesn't go anywhere
+                const href = isDisabled ? "#" : targetHref;
+
                 return (
-                  <Link key={dashboard.id} href={href}>
+                  <Link key={dashboard.id} href={href} aria-disabled={isDisabled} className={isDisabled ? "pointer-events-none" : ""}>
                     <div className="cursor-pointer">
-                      {/* Card Header */}
-                      <div className={`${dashboard.color} text-white p-3 rounded-lg flex items-center justify-center gap-3 aspect-square hover:shadow-lg transition-shadow`}>
+                      {/* Apply greyscale and opacity if disabled */}
+                      <div className={`p-3 rounded-lg flex items-center justify-center gap-3 aspect-square transition-all duration-300
+                        ${isDisabled ? 'bg-slate-300 text-slate-500 opacity-60 grayscale' : `${dashboard.color} text-white hover:shadow-lg`}
+                      `}>
                         <div className="text-center">
                           <span className="text-2xl block mb-1">{dashboard.icon}</span>
                           <h2 className="text-sm font-bold">{dashboard.title}</h2>
+                          
+                          {/* Optional: Add a little lock icon so they know why it's grey */}
+                          {isDisabled && (
+                            <span className="text-[10px] uppercase font-black tracking-widest mt-2 block bg-slate-400/20 px-2 py-1 rounded">Locked</span>
+                          )}
                         </div>
                       </div>
                     </div>

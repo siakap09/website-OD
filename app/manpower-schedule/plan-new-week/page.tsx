@@ -3,6 +3,7 @@
 import { useState, useMemo, useEffect } from "react";
 import { useSearchParams, useRouter } from "next/navigation";
 import { format, parseISO, addDays } from "date-fns";
+import { useSession } from "next-auth/react"; // <-- IMPORT SESSION
 import WeekSelector from "@/app/components/WeekSelector";
 import Sidebar from "@/app/components/Sidebar";
 
@@ -74,6 +75,8 @@ const SummaryTable = ({ title, data }: { title: string, data: any[] }) => {
 export default function PlanNewWeekPage() {
   const router = useRouter();
   const searchParams = useSearchParams();
+  const { data: session } = useSession(); // <-- GET LOGGED IN USER
+
   const startDateStr = searchParams.get("start");
   const endDateStr = searchParams.get("end");
 
@@ -89,6 +92,20 @@ export default function PlanNewWeekPage() {
   );
   
   const [branchStaffData, setBranchStaffData] = useState<Record<string, string[]>>({});
+
+  // --- NEW AUTOMATION FOR BRANCH MANAGERS ---
+  useEffect(() => {
+    if (session?.user) {
+      const userRole = (session.user as any).role;
+      const userBranch = (session.user as any).branchName;
+
+      // If they are a branch manager, skip the selection screen immediately!
+      if (userRole === "BRANCH_MANAGER" && userBranch) {
+        setSelectedBranch(userBranch);
+        setHasConfirmedBranch(true);
+      }
+    }
+  }, [session]);
 
   useEffect(() => {
     if (startDateStr && endDateStr) {
@@ -108,16 +125,25 @@ export default function PlanNewWeekPage() {
   }, [startDateStr, endDateStr, searchParams]);
 
   useEffect(() => {
-    const saved = localStorage.getItem("branch_custom_staff");
-    if (saved) setBranchStaffData(JSON.parse(saved));
-  }, []);
+  const fetchStaff = async () => {
+    const res = await fetch('/api/branch-staff');
+    const staffList = await res.json();
+    
+    const grouped: Record<string, string[]> = {};
+    staffList.forEach((s: any) => {
+      if (!grouped[s.branch]) grouped[s.branch] = [];
+      grouped[s.branch].push(s.name);
+    });
+    setBranchStaffData(grouped);
+  };
+  fetchStaff();
+}, []);
 
-  // Format Helper: Get the exact date (dd MMM yyyy) for a specific day of the week
+  // Format Helper
   const getDateForDay = (dayName: string) => {
     if (!startDateStr) return "";
     try {
       const start = parseISO(startDateStr);
-      // Iterate through the 7 days of the week to find the matching day name
       for (let i = 0; i < 7; i++) {
         const currentDate = addDays(start, i);
         if (format(currentDate, "EEEE").toLowerCase() === dayName.toLowerCase()) {
@@ -213,18 +239,10 @@ export default function PlanNewWeekPage() {
     return Object.entries(staffStats).map(([name, stats]) => ({ name, ...stats }));
   };
 
-  const handleFinalSubmit = () => {
-    if (!window.confirm("Submit final schedule? This will lock the original record.")) return;
+  const handleFinalSubmit = async () => {
+    if (!window.confirm("Submit final schedule? This will lock the original record and save it to the database.")) return;
 
-    const history = JSON.parse(localStorage.getItem("manpower_history") || "[]");
-    const existingIndex = history.findIndex((h: any) => h.id === `${selectedBranch}_${startDateStr}`);
-    
-    if (existingIndex !== -1) {
-      if (!window.confirm("A record for this branch and week already exists. Overwrite the ORIGINAL record? (This is usually not recommended)")) {
-        return;
-      }
-    }
-
+    // Build the data packet
     const snapshot = {
       id: `${selectedBranch}_${startDateStr}`, 
       branch: selectedBranch,
@@ -235,39 +253,62 @@ export default function PlanNewWeekPage() {
       originalSelections: { ...selections }, 
       originalNotes: { ...notes },
       status: "Finalized",
-      submittedAt: new Date().toISOString(),
-      originalAuthor: "Admin User", 
+      originalAuthor: (session?.user as any)?.branchName || "Admin User", 
     };
 
-    let newHistory;
-    if (existingIndex !== -1) {
-      newHistory = [...history];
-      newHistory[existingIndex] = snapshot;
-    } else {
-      newHistory = [snapshot, ...history];
-    }
+    try {
+      // Send it to your existing API route folder!
+      const response = await fetch('/api/save-schedule', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(snapshot)
+      });
 
-    localStorage.setItem("manpower_history", JSON.stringify(newHistory));
-    alert("Schedule Finalized and Archived!");
-    router.push("/manpower-schedule");
+      if (!response.ok) throw new Error("Failed to save");
+
+      alert("Schedule Finalized and Saved to Database! 🚀");
+      router.push("/manpower-schedule");
+      
+    } catch (error) {
+      console.error(error);
+      alert("Uh oh! Something went wrong while saving to the database.");
+    }
   };
 
   const branchSpecificStaff = branchStaffData[selectedBranch] || [];
   const activeStaffList = Array.from(new Set([...SHARED_EMPLOYEES, ...branchSpecificStaff]));
 
+  // Safely check role for UI tweaks
+  const userRole = (session?.user as any)?.role || "USER";
+
   return (
-    <div className="flex min-h-screen bg-slate-50">
+    <div className="flex h-screen bg-slate-50 overflow-hidden">
       
       {/* SIDEBAR */}
       <Sidebar sidebarOpen={sidebarOpen} onCollapse={() => setSidebarOpen(false)} />
 
       {/* MAIN CONTENT */}
-      <main className="flex-1 p-4 md:p-6 overflow-x-hidden overflow-y-auto flex flex-col" style={{ zoom: 0.9 }}>
-        <div className="w-full mx-auto flex-1 flex flex-col">
+      <main className="flex-1 h-screen flex flex-col overflow-hidden relative" style={{ zoom: 0.9 }}>
+        
+        {/* Sticky Header Area */}
+        <div className="shrink-0 w-full mx-auto px-4 md:px-6 pt-4 md:pt-6 z-50 bg-slate-50">
           
-          {/* THE TOP BAR */}
-          <div className="bg-white p-6 rounded-2xl shadow-sm border border-slate-200 flex justify-between items-center mb-8 sticky top-0 z-50 shrink-0">
+          <div className="bg-white p-6 rounded-2xl shadow-sm border border-slate-200 flex justify-between items-center mb-6 relative">
             <div className="flex items-center gap-6">
+                
+                {/* HAMBURGER BUTTON */}
+                {!sidebarOpen && (
+                  <button
+                    onClick={() => setSidebarOpen(true)}
+                    className="p-3 bg-slate-200 text-slate-700 hover:bg-slate-300 rounded-xl transition-colors shadow-sm flex items-center justify-center"
+                    title="Open Sidebar"
+                  >
+                    <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M4 6h16M4 12h16M4 18h16" />
+                    </svg>
+                  </button>
+                )}
+
                 <button
                   onClick={() => router.push('/manpower-schedule')}
                   className="bg-blue-500 text-white px-6 py-3 rounded-xl flex items-center gap-3 shadow-md hover:bg-blue-600 transition-colors"
@@ -281,7 +322,6 @@ export default function PlanNewWeekPage() {
                 <h1 className="text-2xl font-black uppercase tracking-wide text-slate-800 leading-none m-0 flex items-center gap-4">
                   <span>Plan New Week {hasConfirmedBranch && `- ${selectedBranch}`}</span>
                   
-                  {/* Overall Week Range Tag in Top Bar */}
                   {hasConfirmedWeek && startDateStr && endDateStr && (
                     <span className="text-sm bg-slate-100 text-slate-500 border border-slate-200 px-3 py-1.5 rounded-lg font-bold tracking-widest uppercase">
                       {format(parseISO(startDateStr), "dd MMM yyyy")} - {format(parseISO(endDateStr), "dd MMM yyyy")}
@@ -290,8 +330,8 @@ export default function PlanNewWeekPage() {
                 </h1>
             </div>
 
-            {/* Change Branch Button */}
-            {hasConfirmedBranch && !hasConfirmedWeek && (
+            {/* ONLY show "Change Branch" if they are NOT a Branch Manager */}
+            {hasConfirmedBranch && !hasConfirmedWeek && userRole !== "BRANCH_MANAGER" && (
               <button 
                 onClick={() => setHasConfirmedBranch(false)} 
                 className="bg-slate-200 text-slate-700 hover:bg-slate-300 px-6 py-3 rounded-xl font-bold uppercase transition-colors shadow-sm"
@@ -300,12 +340,15 @@ export default function PlanNewWeekPage() {
               </button>
             )}
           </div>
+        </div>
 
-          {/* DYNAMIC CONTENT AREA */}
+        {/* Scrolling Internal Area */}
+        <div className="flex-1 overflow-y-auto w-full mx-auto px-4 md:px-6 pb-20">
+          
           {!hasConfirmedBranch ? (
             
-            // STEP 1: SELECT BRANCH
-            <div className="flex-1 flex flex-col items-center justify-center min-h-[65vh] w-full">
+            // STEP 1: SELECT BRANCH (Branch Managers will instantly skip this!)
+            <div className="flex flex-col items-center justify-center min-h-[65vh] w-full">
               <div className="w-full max-w-md bg-white p-10 rounded-[2rem] shadow-xl border border-slate-100 text-center text-slate-800">
                 <h2 className="text-3xl font-black text-slate-800 mb-8 uppercase tracking-tight">Select Branch</h2>
                 <select value={selectedBranch} onChange={(e) => setSelectedBranch(e.target.value)} className="w-full p-4 border-2 border-slate-200 rounded-xl bg-slate-50 mb-6 font-bold text-slate-700 outline-none focus:border-blue-500 transition-colors">
@@ -321,14 +364,14 @@ export default function PlanNewWeekPage() {
           ) : !hasConfirmedWeek ? (
 
             // STEP 2: SELECT WEEK
-            <div className="flex-1 flex flex-col items-center justify-center min-h-[65vh] w-full text-slate-800">
+            <div className="flex flex-col items-center justify-center min-h-[65vh] w-full text-slate-800">
               <WeekSelector onConfirm={(wd) => router.push(`/manpower-schedule/plan-new-week?${wd}`)} />
             </div>
 
           ) : (
 
             // STEP 3: THE ACTUAL TABLES
-            <div className="space-y-10 mb-20">
+            <div className="space-y-10">
               {isLocked && (
                  <div className="bg-slate-800 text-white p-4 rounded-xl flex justify-between items-center shadow-xl">
                    <span className="font-bold uppercase tracking-widest text-sm">🔒 Archived Record (Read-Only)</span>
@@ -341,11 +384,9 @@ export default function PlanNewWeekPage() {
                 return (
                   <div key={day} className="bg-white rounded-2xl shadow-xl overflow-hidden border border-slate-200">
                     
-                    {/* Day Header with Formatting */}
                     <header className="bg-white p-4 border-b flex justify-between items-center relative">
                       <div className="absolute left-1/2 -translate-x-1/2 flex flex-col items-center">
                         <h2 className="text-xl font-black uppercase text-slate-800 m-0 leading-none">{day}</h2>
-                        {/* THE DYNAMIC DATE IS ADDED HERE */}
                         <span className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mt-1">
                           {getDateForDay(day)}
                         </span>
@@ -364,7 +405,6 @@ export default function PlanNewWeekPage() {
                       </div>
                     </header>
                     
-                    {/* The Table */}
                     <div className="overflow-x-auto relative">
                       <table className="w-full border-collapse" style={{ minWidth: '1900px' }}>
                         <thead className="bg-[#2D3F50] text-white text-[10px] uppercase tracking-widest">
@@ -428,7 +468,7 @@ export default function PlanNewWeekPage() {
               {!isLocked && (
                 <div className="mt-16 text-center pb-10">
                    <button onClick={handleFinalSubmit} className="bg-green-600 hover:bg-green-700 text-white px-20 py-5 rounded-2xl text-xl font-black shadow-xl uppercase tracking-widest transition-transform hover:scale-105">
-                     🚀 Final Submit & Archive
+                      🚀 Final Submit & Archive
                    </button>
                 </div>
               )}

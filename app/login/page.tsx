@@ -3,15 +3,18 @@
 import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { Eye, EyeOff, Lock, User } from "lucide-react";
+import { signIn } from "next-auth/react";
 
 export default function LoginPage() {
   const router = useRouter();
   const [showPassword, setShowPassword] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
+  const [error, setError] = useState("");
 
   const handleSubmit = async (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault();
     setIsLoading(true);
+    setError(""); // Clear any previous errors
     
     const form = e.currentTarget;
     const formData = new FormData(form);
@@ -19,21 +22,22 @@ export default function LoginPage() {
     const password = String(formData.get("password") || "");
 
     try {
-      const res = await fetch("/api/login", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ username, password }),
+      // --- NEXTAUTH SIGNIN LOGIC ---
+      const res = await signIn("credentials", {
+        email: username, 
+        password: password,
+        redirect: false, 
       });
 
-      if (res.ok) {
+      if (res?.error) {
+        setError("Invalid username or password");
+      } else if (res?.ok) {
+        // SUCCESS! Send them to the home dashboard
         router.push("/home");
-      } else {
-        const data = await res.json().catch(() => ({}));
-        alert((data as any).error || "Login failed");
       }
     } catch (err) {
       console.error(err);
-      alert("Network error");
+      setError("A network error occurred. Please try again.");
     } finally {
       setIsLoading(false);
     }
@@ -62,7 +66,7 @@ export default function LoginPage() {
             <p className="text-blue-200 text-sm">Sign in to your account</p>
           </div>
 
-          <form onSubmit={handleSubmit} className="space-y-6">
+          <form onSubmit={handleSubmit} className="space-y-6" autoComplete="off">
             {/* Username field */}
             <div className="space-y-2">
               <label className="block text-sm font-medium text-blue-100 ml-1">
@@ -76,6 +80,7 @@ export default function LoginPage() {
                   name="username"
                   type="text"
                   required
+                  autoComplete="one-time-code" 
                   placeholder="Enter your username"
                   className="w-full pl-12 pr-4 py-3 bg-white/10 border border-white/20 rounded-xl text-white placeholder-blue-200/50 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all"
                   autoFocus
@@ -96,6 +101,7 @@ export default function LoginPage() {
                   name="password"
                   type={showPassword ? "text" : "password"}
                   required
+                  autoComplete="new-password"
                   placeholder="Enter your password"
                   className="w-full pl-12 pr-12 py-3 bg-white/10 border border-white/20 rounded-xl text-white placeholder-blue-200/50 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all"
                 />
@@ -122,6 +128,13 @@ export default function LoginPage() {
                 Forgot password?
               </a>
             </div>
+
+            {/* INLINE ERROR MESSAGE */}
+            {error && (
+              <div className="bg-red-500/20 border border-red-500/50 text-red-200 text-sm text-center py-2.5 rounded-xl font-medium animate-pulse">
+                {error}
+              </div>
+            )}
 
             {/* Submit button */}
             <button

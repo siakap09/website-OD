@@ -2,6 +2,7 @@
 
 import { useState, useRef, useEffect } from "react";
 import Link from "next/link";
+import { signOut } from "next-auth/react"; // <-- 1. IMPORT THIS
 
 interface UserHeaderProps {
   userName?: string;
@@ -17,25 +18,23 @@ export default function UserHeader({
   const [dropdownOpen, setDropdownOpen] = useState(false);
   const dropdownRef = useRef<HTMLDivElement>(null);
 
-  // Close dropdown when clicking outside
   useEffect(() => {
     function handleClickOutside(event: MouseEvent) {
       if (dropdownRef.current && !dropdownRef.current.contains(event.target as Node)) {
         setDropdownOpen(false);
       }
     }
-
     document.addEventListener("mousedown", handleClickOutside);
     return () => document.removeEventListener("mousedown", handleClickOutside);
   }, []);
 
+  // --- 2. UPDATED LOGOUT LOGIC ---
   const handleLogout = async () => {
-    // Clear any auth tokens/session
-    localStorage.removeItem("auth_token");
-    sessionStorage.clear();
-    
-    // Redirect to login page
-    window.location.href = "/login";
+    // This clears the NextAuth cookie and redirects to /login
+    await signOut({ 
+      callbackUrl: "/login",
+      redirect: true 
+    });
   };
 
   return (
@@ -65,25 +64,27 @@ export default function UserHeader({
           </div>
 
           {/* Menu Items */}
-          <div className="py-2">
+          <div className="py-2 text-slate-700"> {/* Added text color for visibility */}
             <Link
               href="/home"
-              className="block px-4 py-2 text-sm text-gray-700 hover:bg-gray-100 transition-colors"
+              className="block px-4 py-2 text-sm hover:bg-gray-100 transition-colors"
               onClick={() => setDropdownOpen(false)}
             >
               🏠 Home
             </Link>
             <Link
               href="/profile"
-              className="block px-4 py-2 text-sm text-gray-700 hover:bg-gray-100 transition-colors"
+              className="block px-4 py-2 text-sm hover:bg-gray-100 transition-colors"
               onClick={() => setDropdownOpen(false)}
             >
               👤 My Profile
             </Link>
+            
+            {/* Updated check to match your database role name */}
             {userRole === "SUPER_ADMIN" && (
               <Link
                 href="/user-management"
-                className="block px-4 py-2 text-sm text-gray-700 hover:bg-gray-100 transition-colors border-t border-gray-200 mt-2 pt-2"
+                className="block px-4 py-2 text-sm hover:bg-gray-100 transition-colors border-t border-gray-200 mt-2 pt-2"
                 onClick={() => setDropdownOpen(false)}
               >
                 👥 User Management
@@ -95,7 +96,7 @@ export default function UserHeader({
           <div className="border-t border-gray-200 p-2">
             <button
               onClick={handleLogout}
-              className="w-full text-left px-4 py-2 text-sm text-red-600 hover:bg-red-50 rounded transition-colors flex items-center gap-2"
+              className="w-full text-left px-4 py-2 text-sm text-red-600 hover:bg-red-50 rounded transition-colors flex items-center gap-2 font-bold"
             >
               🚪 Log out
             </button>

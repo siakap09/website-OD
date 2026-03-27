@@ -1,0 +1,42 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// 1. Table for Login and Roles
+model User {
+  id           Int      @id @default(autoincrement())
+  email        String   @unique
+  passwordHash String
+  role         String   @default("BRANCH_MANAGER")
+  branchName   String?  
+  createdAt    DateTime @default(now())
+}
+
+// 2. Table to replace localStorage for your schedules!
+model ManpowerSchedule {
+  id                 String   @id 
+  branch             String
+  startDate          String
+  endDate            String
+  selections         Json     
+  notes              Json     
+  originalSelections Json     
+  originalNotes      Json     
+  status             String   @default("Finalized")
+  submittedAt        DateTime @default(now())
+  originalAuthor     String
+}
+
+model BranchStaff {
+  id        Int      @id @default(autoincrement())
+  name      String
+  branch    String   // e.g., 'Bandar Seri Putra' or 'Shah Alam'
+  createdAt DateTime @default(now())
+
+  @@unique([name, branch]) // Prevents adding the same person twice to the same branch
+}
